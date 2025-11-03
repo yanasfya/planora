@@ -1,0 +1,6 @@
+@import "tailwindcss";
+
+/* app-wide base styles */
+:root { color-scheme: light dark; }
+html, body { height: 100%; }
+body { background-color: #000; color: #fff; -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; }
