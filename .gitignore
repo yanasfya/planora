@@ -1,0 +1,8 @@
+node_modules
+.next
+.env
+.vercel
+pnpm-lock.yaml
+yarn.lock
+package-lock.json
+.DS_Store
