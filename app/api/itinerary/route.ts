@@ -15,33 +15,122 @@ const dateFormatter = new Intl.DateTimeFormat("en-US", {
   dateStyle: "long",
 });
 
+type Segment = { label: string; time: string };
+
+type SpecialInterestExperience = {
+  keywords: string[];
+  summary: (destination: string) => string;
+  activities: {
+    label: string;
+    title: string;
+    description: string;
+    time?: string;
+  }[];
+};
+
+const segments: Segment[] = [
+  { label: "Morning", time: "8:30 AM" },
+  { label: "Afternoon", time: "1:30 PM" },
+  { label: "Evening", time: "7:00 PM" },
+];
+
+const specialInterestExperiences: SpecialInterestExperience[] = [
+  {
+    keywords: ["universal studios", "universal studio", "usj"],
+    summary: (destination) =>
+      `Plan your day around the headliner attractions at Universal Studios in ${destination}. Prioritize timed-entry areas and blockbuster rides early, then circle back for shows, snacks, and nighttime spectaculars as crowds thin out.`,
+    activities: [
+      {
+        label: "Morning",
+        title: "Morning – Early entry into Universal Studios",
+        description:
+          "Arrive for rope drop so you can head straight to the Wizarding World of Harry Potter or Super Nintendo World. Secure any timed-entry tickets and knock out marquee rides before queues build.",
+        time: "8:00 AM",
+      },
+      {
+        label: "Afternoon",
+        title: "Afternoon – Shows and signature snacks",
+        description:
+          "Shift gears to stage shows like WaterWorld or the Universal Monster Live Rock and Roll Show. Refuel with park-exclusive bites—think Minion buns or Butterbeer—while using the official app to monitor wait times.",
+        time: "1:00 PM",
+      },
+      {
+        label: "Evening",
+        title: "Evening – Nighttime spectaculars and shopping",
+        description:
+          "Revisit favorite attractions with shorter lines and grab souvenirs along Universal CityWalk. Stake out a spot for the evening parade or lagoon show before wrapping the night with a relaxed dinner nearby.",
+        time: "6:30 PM",
+      },
+    ],
+  },
+];
+
+function normalizeInterest(interest: string) {
+  return interest.toLowerCase();
+}
+
+function findSpecialInterestExperience(interest: string) {
+  const normalized = normalizeInterest(interest);
+  return specialInterestExperiences.find((experience) =>
+    experience.keywords.some((keyword) => normalized.includes(keyword)),
+  );
+}
+
+function buildDefaultActivities(destination: string) {
+  return segments.map((segment) => ({
+    title: `${segment.label} adventure`,
+    time: segment.time,
+    description: `Spend your ${segment.label.toLowerCase()} discovering a new corner of ${destination}. Mix in cafes, museums, or parks based on the vibe you’re feeling.`,
+  }));
+}
+
 function createActivities(
   destination: string,
   interests: string[],
   dayIndex: number,
 ) {
-  const segments = [
-    { label: "Morning", time: "8:30 AM" },
-    { label: "Afternoon", time: "1:30 PM" },
-    { label: "Evening", time: "7:00 PM" },
-  ];
-
   if (interests.length === 0) {
-    return segments.map((segment) => ({
-      title: `${segment.label} adventure`,
-      time: segment.time,
-      description: `Spend your ${segment.label.toLowerCase()} discovering a new corner of ${destination}. Mix in cafes, museums, or parks based on the vibe you’re feeling.`,
-    }));
+    return buildDefaultActivities(destination);
   }
 
   return segments.map((segment, segmentIndex) => {
     const interest = interests[(dayIndex + segmentIndex) % interests.length];
+    const experience = findSpecialInterestExperience(interest);
+    const override = experience?.activities.find(
+      (activity) => activity.label === segment.label,
+    );
+
+    if (override) {
+      return {
+        title: override.title,
+        time: override.time ?? segment.time,
+        description: override.description,
+      };
+    }
+
     return {
       title: `${segment.label} – ${interest}`,
       time: segment.time,
-      description: `Immerse yourself in ${interest.toLowerCase()} experiences around ${destination}. Reserve a little time to wander and see what surprises you find.`,
+      description: `Immerse yourself in ${normalizeInterest(interest)} experiences around ${destination}. Reserve a little time to wander and see what surprises you find.`,
     };
   });
+}
+
+function buildDaySummary(
+  destination: string,
+  interest: string | undefined,
+) {
+  if (!interest) {
+    return `Spend the day exploring local highlights in ${destination}. Balance anchor activities with time to relax and soak in the atmosphere.`;
+  }
+
+  const experience = findSpecialInterestExperience(interest);
+
+  if (experience) {
+    return experience.summary(destination);
+  }
+
+  return `Spend the day exploring ${normalizeInterest(interest)} in ${destination}. Balance anchor activities with time to relax and soak in the atmosphere.`;
 }
 
 function buildDayPlans(
@@ -64,14 +153,12 @@ function buildDayPlans(
   ) {
     const formattedDate = dateFormatter.format(current);
     const focus =
-      interests.length > 0
-        ? interests[index % interests.length]
-        : "local highlights";
+      interests.length > 0 ? interests[index % interests.length] : undefined;
 
     plans.push({
       title: `Day ${index + 1}`,
       date: formattedDate,
-      summary: `Spend the day exploring ${focus.toLowerCase()} in ${destination}. Balance anchor activities with time to relax and soak in the atmosphere.`,
+      summary: buildDaySummary(destination, focus),
       activities: createActivities(destination, interests, index),
     });
   }
