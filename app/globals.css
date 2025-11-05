@@ -1,6 +1,11 @@
 @import "tailwindcss";
 
 /* app-wide base styles */
-:root { color-scheme: light dark; }
+:root { color-scheme: light; }
 html, body { height: 100%; }
-body { background-color: #000; color: #fff; -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; }
+body {
+  background: linear-gradient(135deg, #f7f8fb, #f1f5ff, #edf0fb);
+  color: #0f172a;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
