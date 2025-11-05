@@ -1,9 +1,8 @@
 "use client";
 
-import { useEffect, useMemo } from "react";
-import { FormProvider, useForm, useWatch } from "react-hook-form";
-import { zodResolver } from "@hookform/resolvers/zod";
-import { z } from "zod";
+import { ChangeEvent, FormEvent, useMemo, useState } from "react";
+
+import type { ItineraryResponse } from "@/lib/trip-store";
 
 import {
   Badge,
@@ -16,7 +15,6 @@ import {
   Label,
   Textarea,
 } from "./(pwa)/components/ui";
-import { useTripStore, type ItineraryResponse } from "@/lib/trip-store";
 
 const groupTypes = [
   { label: "Solo", value: "solo" },
@@ -48,40 +46,22 @@ const interestOptions = [
   { label: "Family fun", value: "family-fun" },
 ] as const;
 
-const tripFormSchema = z
-  .object({
-    destination: z
-      .string({ required_error: "Destination is required" })
-      .min(1, "Destination is required"),
-    startDate: z
-      .string({ required_error: "Start date is required" })
-      .min(1, "Start date is required"),
-    endDate: z
-      .string({ required_error: "End date is required" })
-      .min(1, "End date is required"),
-    groupType: z.enum(groupTypes.map((option) => option.value) as [string, ...string[]]),
-    budget: z.enum(budgetLevels.map((option) => option.value) as [string, ...string[]]),
-    accommodation: z.enum(
-      accommodationStyles.map((option) => option.value) as [string, ...string[]],
-    ),
-    interests: z.array(z.string()).optional().default([]),
-    specialRequests: z.string().max(500).optional().default(""),
-  })
-  .refine(
-    ({ startDate, endDate }) => {
-      if (!startDate || !endDate) {
-        return true;
-      }
+type GroupTypeValue = (typeof groupTypes)[number]["value"];
+type BudgetValue = (typeof budgetLevels)[number]["value"];
+type AccommodationValue = (typeof accommodationStyles)[number]["value"];
 
-      return new Date(startDate) <= new Date(endDate);
-    },
-    {
-      message: "End date must be after the start date",
-      path: ["endDate"],
-    },
-  );
+type TripFormValues = {
+  destination: string;
+  startDate: string;
+  endDate: string;
+  groupType: GroupTypeValue;
+  budget: BudgetValue;
+  accommodation: AccommodationValue;
+  interests: string[];
+  specialRequests: string;
+};
 
-type TripFormValues = z.infer<typeof tripFormSchema>;
+type TripFormErrors = Partial<Record<keyof TripFormValues, string>>;
 
 const defaultValues: TripFormValues = {
   destination: "",
@@ -94,8 +74,16 @@ const defaultValues: TripFormValues = {
   specialRequests: "",
 };
 
-const valueLabel = (value: string, options: readonly { label: string; value: string }[]) =>
-  options.find((option) => option.value === value)?.label ?? "—";
+const enumValues = {
+  groupType: new Set(groupTypes.map((option) => option.value)),
+  budget: new Set(budgetLevels.map((option) => option.value)),
+  accommodation: new Set(accommodationStyles.map((option) => option.value)),
+} as const;
+
+const valueLabel = (
+  value: string,
+  options: readonly { label: string; value: string }[],
+) => options.find((option) => option.value === value)?.label ?? "—";
 
 const formatDate = (value?: string) => {
   if (!value) {
@@ -115,62 +103,205 @@ const formatDate = (value?: string) => {
   }).format(parsed);
 };
 
-export default function Page() {
-  const form = useForm<TripFormValues>({
-    resolver: zodResolver(tripFormSchema),
-    defaultValues,
-    mode: "onBlur",
-  });
-  const formValues = useWatch({ control: form.control }) as TripFormValues;
-  const { itinerary, loading, error, setError, setItinerary, setLoading, reset } =
-    useTripStore();
-  const selectedInterests = form.watch("interests");
-  const groupTypeValue = form.watch("groupType");
-  const budgetValue = form.watch("budget");
-  const accommodationValue = form.watch("accommodation");
+const validateField = <Key extends keyof TripFormValues>(
+  key: Key,
+  values: TripFormValues,
+): TripFormErrors[Key] => {
+  switch (key) {
+    case "destination":
+      if (!values.destination.trim()) {
+        return "Destination is required" as TripFormErrors[Key];
+      }
+      break;
+    case "startDate":
+      if (!values.startDate) {
+        return "Start date is required" as TripFormErrors[Key];
+      }
+      break;
+    case "endDate":
+      if (!values.endDate) {
+        return "End date is required" as TripFormErrors[Key];
+      }
+      if (
+        values.startDate &&
+        values.endDate &&
+        new Date(values.endDate) < new Date(values.startDate)
+      ) {
+        return "End date must be after the start date" as TripFormErrors[Key];
+      }
+      break;
+    case "groupType":
+      if (!enumValues.groupType.has(values.groupType)) {
+        return "Select who is traveling" as TripFormErrors[Key];
+      }
+      break;
+    case "budget":
+      if (!enumValues.budget.has(values.budget)) {
+        return "Choose a budget level" as TripFormErrors[Key];
+      }
+      break;
+    case "accommodation":
+      if (!enumValues.accommodation.has(values.accommodation)) {
+        return "Choose an accommodation style" as TripFormErrors[Key];
+      }
+      break;
+    case "specialRequests":
+      if (values.specialRequests && values.specialRequests.length > 500) {
+        return "Special requests must be 500 characters or fewer" as TripFormErrors[Key];
+      }
+      break;
+    default:
+      break;
+  }
 
-  useEffect(() => {
-    form.register("groupType");
-    form.register("budget");
-    form.register("accommodation");
-    form.register("interests");
-  }, [form]);
+  return undefined;
+};
+
+const validateTripForm = (values: TripFormValues): TripFormErrors => {
+  const result: TripFormErrors = {};
+
+  (Object.keys(values) as (keyof TripFormValues)[]).forEach((field) => {
+    const error = validateField(field, values);
+
+    if (error) {
+      result[field] = error;
+    }
+  });
+
+  return result;
+};
+
+export default function Page() {
+  const [formValues, setFormValues] = useState<TripFormValues>(defaultValues);
+  const [errors, setErrors] = useState<TripFormErrors>({});
+  const [itinerary, setItinerary] = useState<ItineraryResponse | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [fetchError, setFetchError] = useState<string | null>(null);
+
+  const selectedInterests = formValues.interests;
+
+  const updateField = <Key extends keyof TripFormValues>(
+    key: Key,
+    value: TripFormValues[Key],
+  ) => {
+    setFormValues((previous) => {
+      const next = { ...previous, [key]: value } as TripFormValues;
+
+      setErrors((previousErrors) => {
+        const nextErrors: TripFormErrors = { ...previousErrors };
+        const fieldError = validateField(key, next);
+
+        if (fieldError) {
+          nextErrors[key] = fieldError;
+        } else {
+          delete nextErrors[key];
+        }
+
+        if (key === "startDate" || key === "endDate") {
+          const otherField = key === "startDate" ? "endDate" : "startDate";
+          const otherError = validateField(otherField, next);
+
+          if (otherError) {
+            nextErrors[otherField] = otherError;
+          } else {
+            delete nextErrors[otherField];
+          }
+        }
+
+        return nextErrors;
+      });
+
+      return next;
+    });
+  };
+
+  const handleBlur = (key: keyof TripFormValues) => {
+    setErrors((previousErrors) => {
+      const nextErrors: TripFormErrors = { ...previousErrors };
+      const fieldError = validateField(key, formValues);
+
+      if (fieldError) {
+        nextErrors[key] = fieldError;
+      } else {
+        delete nextErrors[key];
+      }
+
+      if (key === "startDate" || key === "endDate") {
+        const otherField = key === "startDate" ? "endDate" : "startDate";
+        const otherError = validateField(otherField, formValues);
+
+        if (otherError) {
+          nextErrors[otherField] = otherError;
+        } else {
+          delete nextErrors[otherField];
+        }
+      }
+
+      return nextErrors;
+    });
+  };
+
+  const handleInputChange = (
+    event: ChangeEvent<HTMLInputElement | HTMLTextAreaElement>,
+  ) => {
+    const { id, value } = event.target;
+    const field = id as keyof TripFormValues;
+
+    updateField(field, value as TripFormValues[keyof TripFormValues]);
+  };
 
   const toggleInterest = (value: string) => {
-    const current = form.getValues("interests") ?? [];
-    const exists = current.includes(value);
-    const next = exists ? current.filter((item) => item !== value) : [...current, value];
+    setFormValues((previous) => {
+      const current = previous.interests;
+      const exists = current.includes(value);
+      const nextInterests = exists
+        ? current.filter((item) => item !== value)
+        : [...current, value];
+      const next = { ...previous, interests: nextInterests };
 
-    form.setValue("interests", next, {
-      shouldDirty: true,
-      shouldTouch: true,
-      shouldValidate: true,
+      setErrors((previousErrors) => {
+        const nextErrors: TripFormErrors = { ...previousErrors };
+        delete nextErrors.interests;
+        return nextErrors;
+      });
+
+      return next;
     });
   };
 
-  const handleSegmentChange = <Key extends keyof TripFormValues>(key: Key, value: string) => {
-    form.setValue(key, value as TripFormValues[Key], {
-      shouldDirty: true,
-      shouldTouch: true,
-      shouldValidate: true,
-    });
+  const handleSegmentChange = <Key extends keyof TripFormValues>(
+    key: Key,
+    value: string,
+  ) => {
+    updateField(key, value as TripFormValues[Key]);
   };
 
-  const onSubmit = form.handleSubmit(async (values) => {
+  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+
+    const validation = validateTripForm(formValues);
+    setErrors(validation);
+
+    const hasErrors = Object.values(validation).some(Boolean);
+
+    if (hasErrors) {
+      return;
+    }
+
     setLoading(true);
-    setError(null);
-    reset();
+    setFetchError(null);
+    setItinerary(null);
 
     try {
       const payload = {
-        destination: values.destination.trim(),
-        startDate: values.startDate,
-        endDate: values.endDate,
-        budget: values.budget,
-        groupType: values.groupType,
-        accommodation: values.accommodation,
-        interests: values.interests ?? [],
-        specialRequests: values.specialRequests?.trim() || undefined,
+        destination: formValues.destination.trim(),
+        startDate: formValues.startDate,
+        endDate: formValues.endDate,
+        budget: formValues.budget,
+        groupType: formValues.groupType,
+        accommodation: formValues.accommodation,
+        interests: formValues.interests,
+        specialRequests: formValues.specialRequests.trim() || undefined,
       };
 
       const response = await fetch("/api/itinerary", {
@@ -187,20 +318,22 @@ export default function Page() {
         );
       }
 
-      const data = await response.json();
-      const resolved = (data?.itinerary ?? data) as ItineraryResponse;
+      const data = (await response.json()) as {
+        itinerary?: ItineraryResponse;
+        [key: string]: unknown;
+      };
 
-      setItinerary(resolved);
-    } catch (submitError) {
-      setError(
-        submitError instanceof Error
-          ? submitError.message
+      setItinerary((data?.itinerary ?? data) as ItineraryResponse);
+    } catch (error) {
+      setFetchError(
+        error instanceof Error
+          ? error.message
           : "An unexpected error occurred. Please try again.",
       );
     } finally {
       setLoading(false);
     }
-  });
+  };
 
   const interestBadges = useMemo(() => {
     if (!itinerary?.interests || !Array.isArray(itinerary.interests)) {
@@ -250,208 +383,225 @@ export default function Page() {
               </p>
             </CardHeader>
             <CardContent className="space-y-8">
-              <FormProvider {...form}>
-                <form className="space-y-8" onSubmit={onSubmit}>
-                  <section className="space-y-4">
-                    <div>
-                      <h2 className="text-sm font-semibold uppercase tracking-wide text-zinc-500">
-                        Destination
-                      </h2>
-                      <p className="text-sm text-zinc-500">
-                        Where do you want to go?
-                      </p>
-                    </div>
+              <form className="space-y-8" onSubmit={handleSubmit} noValidate>
+                <section className="space-y-4">
+                  <div>
+                    <h2 className="text-sm font-semibold uppercase tracking-wide text-zinc-500">
+                      Destination
+                    </h2>
+                    <p className="text-sm text-zinc-500">Where do you want to go?</p>
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="destination">City or region*</Label>
+                    <Input
+                      id="destination"
+                      placeholder="e.g. Kyoto, Japan"
+                      value={formValues.destination}
+                      onChange={handleInputChange}
+                      onBlur={() => handleBlur("destination")}
+                    />
+                    {errors.destination ? (
+                      <p className="text-xs text-red-600">{errors.destination}</p>
+                    ) : null}
+                  </div>
+                </section>
+
+                <section className="space-y-4">
+                  <div>
+                    <h2 className="text-sm font-semibold uppercase tracking-wide text-zinc-500">
+                      Travel Dates
+                    </h2>
+                    <p className="text-sm text-zinc-500">When will you be traveling?</p>
+                  </div>
+                  <div className="grid gap-4 sm:grid-cols-2">
                     <div className="space-y-2">
-                      <Label htmlFor="destination">City or region*</Label>
-                      <Input id="destination" placeholder="e.g. Kyoto, Japan" {...form.register("destination")} />
-                      {form.formState.errors.destination ? (
-                        <p className="text-xs text-red-600">{form.formState.errors.destination.message}</p>
+                      <Label htmlFor="startDate">Start date*</Label>
+                      <Input
+                        id="startDate"
+                        type="date"
+                        value={formValues.startDate}
+                        onChange={handleInputChange}
+                        onBlur={() => handleBlur("startDate")}
+                      />
+                      {errors.startDate ? (
+                        <p className="text-xs text-red-600">{errors.startDate}</p>
                       ) : null}
                     </div>
-                  </section>
-
-                  <section className="space-y-4">
-                    <div>
-                      <h2 className="text-sm font-semibold uppercase tracking-wide text-zinc-500">
-                        Travel Dates
-                      </h2>
-                      <p className="text-sm text-zinc-500">When will you be traveling?</p>
+                    <div className="space-y-2">
+                      <Label htmlFor="endDate">End date*</Label>
+                      <Input
+                        id="endDate"
+                        type="date"
+                        value={formValues.endDate}
+                        onChange={handleInputChange}
+                        onBlur={() => handleBlur("endDate")}
+                      />
+                      {errors.endDate ? (
+                        <p className="text-xs text-red-600">{errors.endDate}</p>
+                      ) : null}
                     </div>
-                    <div className="grid gap-4 sm:grid-cols-2">
-                      <div className="space-y-2">
-                        <Label htmlFor="startDate">Start date*</Label>
-                        <Input id="startDate" type="date" {...form.register("startDate")} />
-                        {form.formState.errors.startDate ? (
-                          <p className="text-xs text-red-600">{form.formState.errors.startDate.message}</p>
-                        ) : null}
+                  </div>
+                </section>
+
+                <section className="space-y-4">
+                  <div>
+                    <h2 className="text-sm font-semibold uppercase tracking-wide text-zinc-500">
+                      Travel Details
+                    </h2>
+                    <p className="text-sm text-zinc-500">
+                      Help us understand who you&apos;re traveling with and the vibe you&apos;re after.
+                    </p>
+                  </div>
+                  <div className="space-y-4">
+                    <div className="space-y-2">
+                      <Label>Who&apos;s going?</Label>
+                      <div className="grid grid-cols-2 gap-2">
+                        {groupTypes.map((option) => {
+                          const isActive = formValues.groupType === option.value;
+
+                          return (
+                            <button
+                              key={option.value}
+                              className={`rounded-2xl border px-4 py-3 text-sm font-medium transition ${
+                                isActive
+                                  ? "border-black bg-black text-white"
+                                  : "border-zinc-200 bg-white text-zinc-600 hover:border-zinc-300"
+                              }`}
+                              onClick={(event) => {
+                                event.preventDefault();
+                                handleSegmentChange("groupType", option.value);
+                              }}
+                              type="button"
+                            >
+                              {option.label}
+                            </button>
+                          );
+                        })}
                       </div>
-                      <div className="space-y-2">
-                        <Label htmlFor="endDate">End date*</Label>
-                        <Input id="endDate" type="date" {...form.register("endDate")} />
-                        {form.formState.errors.endDate ? (
-                          <p className="text-xs text-red-600">{form.formState.errors.endDate.message}</p>
-                        ) : null}
-                      </div>
-                    </div>
-                  </section>
-
-                  <section className="space-y-4">
-                    <div>
-                      <h2 className="text-sm font-semibold uppercase tracking-wide text-zinc-500">
-                        Travel Details
-                      </h2>
-                      <p className="text-sm text-zinc-500">
-                        Help us understand who you&apos;re traveling with and the vibe you&apos;re after.
-                      </p>
-                    </div>
-                    <div className="space-y-4">
-                      <div className="space-y-2">
-                        <Label>Who&apos;s going?</Label>
-                        <div className="grid grid-cols-2 gap-2">
-                          {groupTypes.map((option) => {
-                            const isActive = groupTypeValue === option.value;
-
-                            return (
-                              <button
-                                key={option.value}
-                                className={`rounded-2xl border px-4 py-3 text-sm font-medium transition ${
-                                  isActive
-                                    ? "border-black bg-black text-white"
-                                    : "border-zinc-200 bg-white text-zinc-600 hover:border-zinc-300"
-                                }`}
-                                onClick={(event) => {
-                                  event.preventDefault();
-                                  handleSegmentChange("groupType", option.value);
-                                }}
-                                type="button"
-                              >
-                                {option.label}
-                              </button>
-                            );
-                          })}
-                        </div>
-                        {form.formState.errors.groupType ? (
-                          <p className="text-xs text-red-600">{form.formState.errors.groupType.message}</p>
-                        ) : null}
-                      </div>
-                      <div className="space-y-2">
-                        <Label>Budget per traveler</Label>
-                        <div className="grid grid-cols-3 gap-2">
-                          {budgetLevels.map((option) => {
-                            const isActive = budgetValue === option.value;
-
-                            return (
-                              <button
-                                key={option.value}
-                                className={`rounded-2xl border px-4 py-3 text-sm font-medium transition ${
-                                  isActive
-                                    ? "border-black bg-black text-white"
-                                    : "border-zinc-200 bg-white text-zinc-600 hover:border-zinc-300"
-                                }`}
-                                onClick={(event) => {
-                                  event.preventDefault();
-                                  handleSegmentChange("budget", option.value);
-                                }}
-                                type="button"
-                              >
-                                {option.label}
-                              </button>
-                            );
-                          })}
-                        </div>
-                        {form.formState.errors.budget ? (
-                          <p className="text-xs text-red-600">{form.formState.errors.budget.message}</p>
-                        ) : null}
-                      </div>
-                      <div className="space-y-2">
-                        <Label>Accommodation vibe</Label>
-                        <div className="grid gap-2 sm:grid-cols-3">
-                          {accommodationStyles.map((option) => {
-                            const isActive = accommodationValue === option.value;
-
-                            return (
-                              <button
-                                key={option.value}
-                                className={`rounded-2xl border px-4 py-3 text-sm font-medium transition ${
-                                  isActive
-                                    ? "border-black bg-black text-white"
-                                    : "border-zinc-200 bg-white text-zinc-600 hover:border-zinc-300"
-                                }`}
-                                onClick={(event) => {
-                                  event.preventDefault();
-                                  handleSegmentChange("accommodation", option.value);
-                                }}
-                                type="button"
-                              >
-                                {option.label}
-                              </button>
-                            );
-                          })}
-                        </div>
-                        {form.formState.errors.accommodation ? (
-                          <p className="text-xs text-red-600">
-                            {form.formState.errors.accommodation.message}
-                          </p>
-                        ) : null}
-                      </div>
-                    </div>
-                  </section>
-
-                  <section className="space-y-4">
-                    <div>
-                      <h2 className="text-sm font-semibold uppercase tracking-wide text-zinc-500">
-                        Interests & Preferences
-                      </h2>
-                      <p className="text-sm text-zinc-500">
-                        What should we prioritize when building your itinerary?
-                      </p>
-                    </div>
-                    <div className="grid gap-2 sm:grid-cols-2">
-                      {interestOptions.map((option) => {
-                        const isActive = (selectedInterests ?? []).includes(option.value);
-
-                        return (
-                          <button
-                            key={option.value}
-                            className={`rounded-2xl border px-4 py-3 text-left text-sm transition ${
-                              isActive
-                                ? "border-black bg-black text-white"
-                                : "border-zinc-200 bg-white text-zinc-600 hover:border-zinc-300"
-                            }`}
-                            onClick={(event) => {
-                              event.preventDefault();
-                              toggleInterest(option.value);
-                            }}
-                            type="button"
-                          >
-                            {option.label}
-                          </button>
-                        );
-                      })}
+                      {errors.groupType ? (
+                        <p className="text-xs text-red-600">{errors.groupType}</p>
+                      ) : null}
                     </div>
                     <div className="space-y-2">
-                      <Label htmlFor="specialRequests">Special requirements</Label>
-                      <Textarea
-                        id="specialRequests"
-                        placeholder="Dietary needs, accessibility notes, must-see spots, etc."
-                        rows={3}
-                        {...form.register("specialRequests")}
-                      />
-                      <p className="text-xs text-zinc-500">
-                        Optional — share anything else that would make your trip unforgettable.
-                      </p>
+                      <Label>Budget per traveler</Label>
+                      <div className="grid grid-cols-3 gap-2">
+                        {budgetLevels.map((option) => {
+                          const isActive = formValues.budget === option.value;
+
+                          return (
+                            <button
+                              key={option.value}
+                              className={`rounded-2xl border px-4 py-3 text-sm font-medium transition ${
+                                isActive
+                                  ? "border-black bg-black text-white"
+                                  : "border-zinc-200 bg-white text-zinc-600 hover:border-zinc-300"
+                              }`}
+                              onClick={(event) => {
+                                event.preventDefault();
+                                handleSegmentChange("budget", option.value);
+                              }}
+                              type="button"
+                            >
+                              {option.label}
+                            </button>
+                          );
+                        })}
+                      </div>
+                      {errors.budget ? (
+                        <p className="text-xs text-red-600">{errors.budget}</p>
+                      ) : null}
                     </div>
-                  </section>
+                    <div className="space-y-2">
+                      <Label>Accommodation vibe</Label>
+                      <div className="grid gap-2 sm:grid-cols-3">
+                        {accommodationStyles.map((option) => {
+                          const isActive = formValues.accommodation === option.value;
 
-                  {error ? (
-                    <p className="rounded-3xl bg-red-50 px-5 py-3 text-sm text-red-600">{error}</p>
-                  ) : null}
+                          return (
+                            <button
+                              key={option.value}
+                              className={`rounded-2xl border px-4 py-3 text-sm font-medium transition ${
+                                isActive
+                                  ? "border-black bg-black text-white"
+                                  : "border-zinc-200 bg-white text-zinc-600 hover:border-zinc-300"
+                              }`}
+                              onClick={(event) => {
+                                event.preventDefault();
+                                handleSegmentChange("accommodation", option.value);
+                              }}
+                              type="button"
+                            >
+                              {option.label}
+                            </button>
+                          );
+                        })}
+                      </div>
+                      {errors.accommodation ? (
+                        <p className="text-xs text-red-600">{errors.accommodation}</p>
+                      ) : null}
+                    </div>
+                  </div>
+                </section>
 
-                  <Button className="w-full" disabled={loading} type="submit">
-                    {loading ? "Generating itinerary…" : "Generate itinerary"}
-                  </Button>
-                </form>
-              </FormProvider>
+                <section className="space-y-4">
+                  <div>
+                    <h2 className="text-sm font-semibold uppercase tracking-wide text-zinc-500">
+                      Interests & Preferences
+                    </h2>
+                    <p className="text-sm text-zinc-500">
+                      What should we prioritize when building your itinerary?
+                    </p>
+                  </div>
+                  <div className="grid gap-2 sm:grid-cols-2">
+                    {interestOptions.map((option) => {
+                      const isActive = selectedInterests.includes(option.value);
+
+                      return (
+                        <button
+                          key={option.value}
+                          className={`rounded-2xl border px-4 py-3 text-left text-sm transition ${
+                            isActive
+                              ? "border-black bg-black text-white"
+                              : "border-zinc-200 bg-white text-zinc-600 hover:border-zinc-300"
+                          }`}
+                          onClick={(event) => {
+                            event.preventDefault();
+                            toggleInterest(option.value);
+                          }}
+                          type="button"
+                        >
+                          {option.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="specialRequests">Special requirements</Label>
+                    <Textarea
+                      id="specialRequests"
+                      placeholder="Dietary needs, accessibility notes, must-see spots, etc."
+                      rows={3}
+                      value={formValues.specialRequests}
+                      onChange={handleInputChange}
+                      onBlur={() => handleBlur("specialRequests")}
+                    />
+                    <p className="text-xs text-zinc-500">
+                      Optional — share anything else that would make your trip unforgettable.
+                    </p>
+                    {errors.specialRequests ? (
+                      <p className="text-xs text-red-600">{errors.specialRequests}</p>
+                    ) : null}
+                  </div>
+                </section>
+
+                {fetchError ? (
+                  <p className="rounded-3xl bg-red-50 px-5 py-3 text-sm text-red-600">{fetchError}</p>
+                ) : null}
+
+                <Button className="w-full" disabled={loading} type="submit">
+                  {loading ? "Generating itinerary…" : "Generate itinerary"}
+                </Button>
+              </form>
             </CardContent>
           </Card>
 
@@ -464,28 +614,26 @@ export default function Page() {
                 </p>
               </CardHeader>
               <CardContent className="space-y-6">
-                <SummaryItem label="Destination" value={formValues?.destination || "Add a destination"} />
+                <SummaryItem label="Destination" value={formValues.destination || "Add a destination"} />
                 <SummaryItem
                   label="Dates"
-                  value={`${formatDate(formValues?.startDate)} – ${formatDate(formValues?.endDate)}`}
+                  value={`${formatDate(formValues.startDate)} – ${formatDate(formValues.endDate)}`}
                 />
                 <SummaryItem
                   label="Travelers"
-                  value={valueLabel(formValues?.groupType ?? "", groupTypes)}
+                  value={valueLabel(formValues.groupType, groupTypes)}
                 />
                 <SummaryItem
                   label="Budget"
-                  value={valueLabel(formValues?.budget ?? "", budgetLevels)}
+                  value={valueLabel(formValues.budget, budgetLevels)}
                 />
                 <SummaryItem
                   label="Accommodation"
-                  value={valueLabel(formValues?.accommodation ?? "", accommodationStyles)}
+                  value={valueLabel(formValues.accommodation, accommodationStyles)}
                 />
                 <div className="space-y-2">
-                  <h3 className="text-xs font-semibold uppercase tracking-wide text-zinc-500">
-                    Interests
-                  </h3>
-                  {formValues?.interests && formValues.interests.length > 0 ? (
+                  <h3 className="text-xs font-semibold uppercase tracking-wide text-zinc-500">Interests</h3>
+                  {formValues.interests && formValues.interests.length > 0 ? (
                     <div className="flex flex-wrap gap-2">
                       {formValues.interests.map((interest) => (
                         <Badge key={interest} className="bg-zinc-100 text-xs text-zinc-700">
@@ -502,7 +650,7 @@ export default function Page() {
                     Special requirements
                   </h3>
                   <p className="text-sm text-zinc-600">
-                    {formValues?.specialRequests?.trim().length
+                    {formValues.specialRequests.trim().length
                       ? formValues.specialRequests
                       : "None added yet."}
                   </p>
@@ -538,7 +686,7 @@ export default function Page() {
                         {itinerary.destination ?? "Your custom itinerary"}
                       </h3>
                       <p className="text-sm text-zinc-500">
-                        {itinerary.duration ?? `${formatDate(formValues?.startDate)} → ${formatDate(formValues?.endDate)}`}
+                        {itinerary.duration ?? `${formatDate(formValues.startDate)} → ${formatDate(formValues.endDate)}`}
                       </p>
                       {interestBadges.length > 0 ? (
                         <div className="flex flex-wrap gap-2">
@@ -596,9 +744,7 @@ export default function Page() {
                                             </span>
                                           ) : null}
                                           {activity.time ? (
-                                            <Badge className="bg-white text-zinc-600">
-                                              {activity.time}
-                                            </Badge>
+                                            <Badge className="bg-white text-zinc-600">{activity.time}</Badge>
                                           ) : null}
                                         </div>
                                         {activity.description ? (
