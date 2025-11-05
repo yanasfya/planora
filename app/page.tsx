@@ -293,15 +293,29 @@ export default function Page() {
     setItinerary(null);
 
     try {
+      const destination = formValues.destination.trim();
+      const budgetLabel = valueLabel(formValues.budget, budgetLevels);
+      const groupTypeLabel = valueLabel(formValues.groupType, groupTypes);
+      const accommodationLabel = valueLabel(
+        formValues.accommodation,
+        accommodationStyles,
+      );
+      const specialRequests = formValues.specialRequests.trim();
+      const interestLabels = formValues.interests
+        .map((interest) => valueLabel(interest, interestOptions))
+        .filter((label) => label !== "—");
+
       const payload = {
-        destination: formValues.destination.trim(),
+        destination,
         startDate: formValues.startDate,
         endDate: formValues.endDate,
-        budget: formValues.budget,
-        groupType: formValues.groupType,
-        accommodation: formValues.accommodation,
-        interests: formValues.interests,
-        specialRequests: formValues.specialRequests.trim() || undefined,
+        budget: budgetLabel === "—" ? formValues.budget : budgetLabel,
+        interests: interestLabels,
+        ...(groupTypeLabel !== "—" ? { groupType: groupTypeLabel } : {}),
+        ...(accommodationLabel !== "—"
+          ? { accommodation: accommodationLabel }
+          : {}),
+        ...(specialRequests ? { specialRequests } : {}),
       };
 
       const response = await fetch("/api/itinerary", {
@@ -312,18 +326,49 @@ export default function Page() {
         body: JSON.stringify(payload),
       });
 
+      const data = (await response.json().catch(() => null)) as
+        | {
+            error?: unknown;
+            fieldErrors?: Record<string, string[] | undefined>;
+            itinerary?: ItineraryResponse;
+            [key: string]: unknown;
+          }
+        | null;
+
       if (!response.ok) {
+        if (data?.fieldErrors) {
+          setErrors((previous) => {
+            const nextErrors: TripFormErrors = { ...previous };
+
+            for (const [key, messages] of Object.entries(data.fieldErrors ?? {})) {
+              if (
+                key in defaultValues &&
+                Array.isArray(messages) &&
+                messages.length > 0
+              ) {
+                nextErrors[key as keyof TripFormValues] = messages[0];
+              }
+            }
+
+            return nextErrors;
+          });
+        }
+
+        const errorMessage =
+          typeof data?.error === "string"
+            ? data.error
+            : "We couldn't generate an itinerary right now. Please try again in a moment.";
+
+        throw new Error(errorMessage);
+      }
+
+      if (!data) {
         throw new Error(
-          "We couldn't generate an itinerary right now. Please try again in a moment.",
+          "We couldn't process the itinerary response. Please try again shortly.",
         );
       }
 
-      const data = (await response.json()) as {
-        itinerary?: ItineraryResponse;
-        [key: string]: unknown;
-      };
-
-      setItinerary((data?.itinerary ?? data) as ItineraryResponse);
+      setItinerary((data.itinerary ?? data) as ItineraryResponse);
     } catch (error) {
       setFetchError(
         error instanceof Error
@@ -379,6 +424,55 @@ export default function Page() {
             </div>
           </div>
         </header>
+
+        <section className="relative overflow-hidden rounded-3xl border border-white/60 bg-white/75 px-8 py-10 shadow-lg shadow-black/5">
+          <div className="pointer-events-none absolute -top-32 -right-12 h-72 w-72 rounded-full bg-[#d1d9ff]/60 blur-3xl" />
+          <div className="pointer-events-none absolute -bottom-24 left-16 h-64 w-64 rounded-full bg-[#fde68a]/40 blur-3xl" />
+          <div className="relative grid gap-8 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)] lg:items-center">
+            <div className="space-y-5">
+              <p className="text-xs font-semibold uppercase tracking-[0.28em] text-indigo-500">
+                Trip Planner
+              </p>
+              <h2 className="text-3xl font-semibold text-zinc-900 sm:text-4xl">
+                Shape a getaway that mirrors your travel style
+              </h2>
+              <p className="max-w-2xl text-sm leading-relaxed text-zinc-600">
+                Plug in the basics, define your vibe, and let Planora craft a multi-day itinerary with balanced pacing, local gems, and thoughtful recommendations.
+              </p>
+            </div>
+            <div className="hidden h-full rounded-3xl border border-indigo-100 bg-gradient-to-br from-indigo-500/10 via-indigo-500/5 to-white p-6 text-sm text-indigo-700 shadow-inner lg:flex lg:flex-col lg:justify-between">
+              <div className="space-y-3">
+                <p className="text-xs font-semibold uppercase tracking-[0.28em] text-indigo-400">
+                  What&apos;s included
+                </p>
+                <ul className="space-y-2">
+                  <li className="flex items-center gap-3">
+                    <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-white text-xs font-semibold text-indigo-500">
+                      1
+                    </span>
+                    <span>Daily highlights with morning, afternoon, and evening anchors.</span>
+                  </li>
+                  <li className="flex items-center gap-3">
+                    <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-white text-xs font-semibold text-indigo-500">
+                      2
+                    </span>
+                    <span>Recommendations shaped by your group type, budget, and interests.</span>
+                  </li>
+                  <li className="flex items-center gap-3">
+                    <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-white text-xs font-semibold text-indigo-500">
+                      3
+                    </span>
+                    <span>Fallback itinerary ready even if the AI service is momentarily unavailable.</span>
+                  </li>
+                </ul>
+              </div>
+              <div className="mt-6 flex items-center gap-3 rounded-2xl border border-indigo-200 bg-white/70 px-4 py-3 text-indigo-600">
+                <span className="inline-flex h-2 w-2 rounded-full bg-green-500" />
+                <span className="text-sm font-medium">Itinerary service status: Ready</span>
+              </div>
+            </div>
+          </div>
+        </section>
 
         <div className="flex flex-1 flex-col gap-6 pb-8 lg:flex-row">
           <Card className="flex w-full flex-col gap-6 border-white/70 bg-white/80 p-8 shadow-md shadow-black/5 lg:max-w-xl">
@@ -561,14 +655,16 @@ export default function Page() {
           </Card>
 
           <div className="flex flex-1 flex-col gap-6">
-            <Card className="border-white/70 bg-white/80 p-6 shadow-md shadow-black/5">
+            <Card className="relative overflow-hidden border-white/70 bg-white/85 p-6 shadow-md shadow-black/5">
+              <div className="pointer-events-none absolute -top-24 -right-16 h-48 w-48 rounded-full bg-[#fee2f2]/60 blur-3xl" />
+              <div className="pointer-events-none absolute -bottom-24 left-10 h-40 w-40 rounded-full bg-[#dbeafe]/50 blur-3xl" />
               <CardHeader className="space-y-1">
                 <CardTitle className="text-xl font-semibold text-zinc-900">Trip Summary</CardTitle>
                 <p className="text-sm text-zinc-500">
                   Review the details you&apos;ve shared before generating your itinerary.
                 </p>
               </CardHeader>
-              <CardContent className="space-y-5">
+              <CardContent className="relative space-y-5">
                 <SummaryItem
                   label="Destination"
                   value={formValues.destination || "Add a destination"}
@@ -623,7 +719,7 @@ export default function Page() {
               </CardContent>
             </Card>
 
-            <Card className="flex-1 border-white/70 bg-white/80 p-6 shadow-md shadow-black/5">
+            <Card className="flex-1 border-white/70 bg-white/80 p-6 shadow-md shadow-black/5 lg:sticky lg:top-24 lg:max-h-[calc(100dvh-8rem)] lg:overflow-y-auto">
               <CardHeader>
                 <CardTitle className="text-xl font-semibold text-zinc-900">
                   {loading ? "Generating your itinerary" : "Itinerary"}
@@ -671,6 +767,25 @@ export default function Page() {
                       <p className="text-sm text-zinc-600">
                         {(itinerary.overview ?? itinerary.summary) as string}
                       </p>
+                    ) : null}
+
+                    {itinerary.travelerProfile ? (
+                      <div className="rounded-2xl border border-zinc-200 bg-zinc-50/70 p-4">
+                        <p className="text-sm text-zinc-600">
+                          {itinerary.travelerProfile}
+                        </p>
+                      </div>
+                    ) : null}
+
+                    {itinerary.specialRequests ? (
+                      <div className="rounded-2xl border border-amber-200 bg-amber-50/70 p-4 text-sm text-amber-800">
+                        <p className="font-semibold uppercase tracking-[0.18em] text-amber-600">
+                          Special notes
+                        </p>
+                        <p className="mt-2 leading-relaxed text-amber-800">
+                          {itinerary.specialRequests}
+                        </p>
+                      </div>
                     ) : null}
 
                     {itinerary.tips && itinerary.tips.length > 0 ? (

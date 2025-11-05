@@ -8,6 +8,9 @@ const requestSchema = z
     endDate: z.string().min(1, "End date is required"),
     budget: z.string().min(1, "Budget is required").max(60),
     interests: z.array(z.string()).optional(),
+    groupType: z.string().min(1).max(80).optional(),
+    accommodation: z.string().min(1).max(120).optional(),
+    specialRequests: z.string().max(500).optional(),
   })
   .strict();
 
@@ -115,6 +118,9 @@ type OpenRouterItineraryInput = {
   endDate: string;
   interests: string[];
   travelDays: TravelDay[];
+  groupType?: string;
+  accommodation?: string;
+  specialRequests?: string;
 };
 
 function buildTravelDays(start: Date, end: Date): TravelDay[] {
@@ -236,32 +242,114 @@ function buildDayPlans(
   return plans;
 }
 
-function createFallbackItinerary(
-  destination: string,
-  budget: string,
-  start: Date,
-  end: Date,
-  interests: string[],
-): ItineraryContent {
+function describeGroupType(groupType: string) {
+  const normalized = groupType.toLowerCase();
+
+  if (normalized.includes("solo")) {
+    return "a solo traveler";
+  }
+
+  if (normalized.includes("couple")) {
+    return "a couple's getaway";
+  }
+
+  if (normalized.includes("family")) {
+    return "a family adventure";
+  }
+
+  if (normalized.includes("friend")) {
+    return "a friends' trip";
+  }
+
+  return groupType.toLowerCase();
+}
+
+function describeAccommodation(accommodation: string) {
+  const normalized = accommodation.toLowerCase();
+
+  if (normalized.includes("modern")) {
+    return "modern comfort stays";
+  }
+
+  if (normalized.includes("local")) {
+    return "local charm stays";
+  }
+
+  if (normalized.includes("resort")) {
+    return "luxury resort experiences";
+  }
+
+  return accommodation.toLowerCase();
+}
+
+function createFallbackItinerary(options: {
+  destination: string;
+  budget: string;
+  start: Date;
+  end: Date;
+  interests: string[];
+  groupType?: string;
+  accommodation?: string;
+  specialRequests?: string;
+}): ItineraryContent {
+  const {
+    destination,
+    budget,
+    start,
+    end,
+    interests,
+    groupType,
+    accommodation,
+    specialRequests,
+  } = options;
+
   const dayPlans = buildDayPlans(destination, start, end, interests);
   const durationInDays = dayPlans.length;
+  const normalizedBudget = budget.trim().toLowerCase();
 
   const interestSummary =
     interests.length > 0
       ? interests.slice(0, 3).join(", ")
       : "a mix of culture, dining, and relaxation";
 
+  const profileDetails: string[] = [];
+
+  if (groupType) {
+    profileDetails.push(describeGroupType(groupType));
+  }
+
+  if (accommodation) {
+    profileDetails.push(`preferring ${describeAccommodation(accommodation)}`);
+  }
+
+  const travelerProfile =
+    profileDetails.length > 0
+      ? `Designed for ${profileDetails.join(" and ")}.`
+      : undefined;
+
+  const tips = [
+    "Block off a little buffer time each day for spontaneous discoveries.",
+    "Check opening hours a day ahead—local schedules can shift seasonally.",
+    "Bookmark directions offline in case your connection drops while exploring.",
+  ];
+
+  if (specialRequests) {
+    tips.push(`Remember to plan around: ${specialRequests}.`);
+  }
+
   return {
     destination,
     duration: `${durationInDays} day${durationInDays === 1 ? "" : "s"}`,
     budget,
     interests,
-    overview: `A ${durationInDays}-day escape to ${destination} tailored to a ${budget} budget. Expect a balance of must-see highlights with time to follow your curiosity around ${interestSummary}.`,
-    tips: [
-      "Block off a little buffer time each day for spontaneous discoveries.",
-      "Check opening hours a day ahead—local schedules can shift seasonally.",
-      "Bookmark directions offline in case your connection drops while exploring.",
-    ],
+    overview: `A ${durationInDays}-day escape to ${destination} tailored to a ${normalizedBudget} budget. Expect a balance of must-see highlights with time to follow your curiosity around ${interestSummary}.`,
+    ...(travelerProfile ? { travelerProfile } : {}),
+    ...(specialRequests
+      ? {
+          specialRequests,
+        }
+      : {}),
+    tips,
     days: dayPlans,
   };
 }
@@ -371,6 +459,13 @@ async function generateItineraryWithOpenRouter(
                 endDate: input.endDate,
                 interests: input.interests,
                 travelDays: input.travelDays,
+                ...(input.groupType ? { groupType: input.groupType } : {}),
+                ...(input.accommodation
+                  ? { accommodation: input.accommodation }
+                  : {}),
+                ...(input.specialRequests
+                  ? { specialRequests: input.specialRequests }
+                  : {}),
               },
               null,
               2,
@@ -458,6 +553,17 @@ export async function POST(request: Request) {
     ),
   );
 
+  const sanitizedGroupType = parsed.data.groupType?.trim();
+  const groupType = sanitizedGroupType?.length ? sanitizedGroupType : undefined;
+
+  const sanitizedAccommodation = parsed.data.accommodation?.trim();
+  const accommodation =
+    sanitizedAccommodation?.length ? sanitizedAccommodation : undefined;
+
+  const sanitizedSpecialRequests = parsed.data.specialRequests?.trim();
+  const specialRequests =
+    sanitizedSpecialRequests?.length ? sanitizedSpecialRequests : undefined;
+
   const start = new Date(parsed.data.startDate);
   const end = new Date(parsed.data.endDate);
 
@@ -475,13 +581,16 @@ export async function POST(request: Request) {
     );
   }
 
-  const fallbackItinerary = createFallbackItinerary(
-    parsed.data.destination,
-    parsed.data.budget,
+  const fallbackItinerary = createFallbackItinerary({
+    destination: parsed.data.destination,
+    budget: parsed.data.budget,
     start,
     end,
-    sanitizedInterests,
-  );
+    interests: sanitizedInterests,
+    groupType,
+    accommodation,
+    specialRequests,
+  });
 
   const travelDays = buildTravelDays(start, end);
 
@@ -493,6 +602,9 @@ export async function POST(request: Request) {
       endDate: parsed.data.endDate,
       interests: sanitizedInterests,
       travelDays,
+      groupType,
+      accommodation,
+      specialRequests,
     });
 
     if (aiItinerary) {

@@ -18,6 +18,8 @@ export type ItineraryResponse = {
   interests?: string[];
   overview?: string;
   summary?: string;
+  travelerProfile?: string;
+  specialRequests?: string;
   tips?: string[];
   days?: DayPlan[];
   [key: string]: unknown;
