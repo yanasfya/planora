@@ -1,4 +1,3 @@
-// app/api/itineraries/generate/route.ts
 import { NextResponse } from "next/server";
 import { dbConnect } from "@lib/db";
 import ItineraryModel from "@lib/itineraryModel";
@@ -12,22 +11,21 @@ export async function POST(req: Request) {
     if (!parsed.success) {
       return NextResponse.json({ error: parsed.error.format() }, { status: 400 });
     }
-    const prefs = parsed.data;         // ✅ use parsed prefs
+    const prefs = parsed.data;
 
     await dbConnect();
 
     try {
-      const itinerary = await generateItinerary(prefs); // ✅ pass prefs
-      // (optional) validate itinerary with your ItinerarySchema here
-      // const valid = ItinerarySchema.parse(itinerary);
+      const itinerary = await generateItinerary(prefs);
       return NextResponse.json(itinerary);
-    } catch (err: any) {
-      console.error("LLM raw / validation error:", err?.message ?? err);
-      return NextResponse.json({ error: String(err?.message ?? err) }, { status: 500 });
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : String(err);
+      console.error("LLM validation error:", errorMessage);
+      return NextResponse.json({ error: errorMessage }, { status: 500 });
     }
-
-  } catch (err: any) {
-    console.error("Generate route failed:", err);
-    return NextResponse.json({ error: String(err?.message ?? err) }, { status: 500 });
+  } catch (err) {
+    const errorMessage = err instanceof Error ? err.message : String(err);
+    console.error("Generate route failed:", errorMessage);
+    return NextResponse.json({ error: errorMessage }, { status: 500 });
   }
 }

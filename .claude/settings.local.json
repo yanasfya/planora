@@ -1,0 +1,16 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(tree:*)",
+      "Bash(dir /S /B *.ts *.tsx *.js *.jsx 2)",
+      "Bash(nul)",
+      "Bash(findstr:*)",
+      "Bash(dir /S /B /AD 2)",
+      "Bash(find:*)",
+      "Bash(wc:*)",
+      "Bash(npx tsc --noEmit)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}

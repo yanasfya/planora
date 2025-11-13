@@ -1,46 +1,49 @@
-// app/lib/gemini.ts
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { z } from "zod";
 import type { Prefs } from "@lib/types";
 
 const genAI = new GoogleGenerativeAI(process.env.GOOGLE_API_KEY!);
 
-// allow pinning via .env
 const CANDIDATE_MODELS = [
-  process.env.GEMINI_MODEL,           // e.g. models/gemini-2.5-flash or models/gemini-2.5-pro
+  process.env.GEMINI_MODEL,
   "models/gemini-2.5-pro",
   "models/gemini-2.5-flash",
 ].filter(Boolean) as string[];
 
-// Budget coercer (capitalization-insensitive)
 const BudgetEnum = z.enum(["low", "medium", "high"]);
 const CoercedBudget = z.preprocess(
   (v) => (typeof v === "string" ? v.trim().toLowerCase() : v),
   BudgetEnum
 );
 
-// Minimal response schema that matches what your UI expects
 const RESPONSE_SCHEMA = z.object({
   prefs: z.object({
     destination: z.string(),
     startDate: z.string(),
     endDate: z.string(),
-    budget: CoercedBudget,              // ✅ tolerate “Medium” -> “medium”
+    budget: CoercedBudget,
     interests: z.array(z.string()).default([]),
   }),
-  days: z.array(z.object({
-    day: z.number().int().min(1),
-    summary: z.string().optional(),
-    activities: z.array(z.object({
-      title: z.string(),
-      time: z.string(),
-      location: z.string(),
-    })).min(1),
-  })).min(1),
+  days: z
+    .array(
+      z.object({
+        day: z.number().int().min(1),
+        summary: z.string().optional(),
+        activities: z
+          .array(
+            z.object({
+              title: z.string(),
+              time: z.string(),
+              location: z.string(),
+            })
+          )
+          .min(1),
+      })
+    )
+    .min(1),
 });
 
 export async function generateItinerary(prefs: Prefs) {
-  // try env-picked model first, then fallbacks
   for (const m of CANDIDATE_MODELS) {
     try {
       const model = genAI.getGenerativeModel({ model: m });
@@ -53,7 +56,7 @@ Return ONLY valid JSON matching this shape (no prose):
     "destination": "${prefs.destination}",
     "startDate": "${prefs.startDate}",
     "endDate": "${prefs.endDate}",
-    "budget": "${prefs.budget}"   // use lowercase: "low" | "medium" | "high"
+    "budget": "${prefs.budget}"
   },
   "days": [
     {
@@ -75,16 +78,17 @@ Rules:
 - Ensure all required fields exist.
 `;
 
-      const res = await model.generateContent({ contents: [{ role: "user", parts: [{ text: prompt }] }] });
+      const res = await model.generateContent({
+        contents: [{ role: "user", parts: [{ text: prompt }] }],
+      });
       const text = res.response.text().trim();
 
-      // Parse + validate model output
       const json = JSON.parse(text);
-      const validated = RESPONSE_SCHEMA.parse(json);   // ✅ coercion happens here
+      const validated = RESPONSE_SCHEMA.parse(json);
 
       return validated;
     } catch (e) {
-      // try next model if this one fails validation or request
+      // Try next model if this one fails
     }
   }
 

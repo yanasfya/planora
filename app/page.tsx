@@ -1,7 +1,7 @@
 "use client";
 import { Controller, useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { PrefsSchema, type Prefs, type Itinerary } from "@lib/types";
+import { PrefsSchema, ItinerarySchema, type Prefs, type Itinerary } from "@lib/types";
 import { useState } from "react";
 
 export default function Page() {
@@ -62,19 +62,30 @@ export default function Page() {
       });
 
       const text = await r.text();
-      let j: any = {};
-      try { j = text ? JSON.parse(text) : {}; } catch { j = { error: text || "Failed" }; }
-
       setLoading(false);
 
       if (!r.ok) {
-        alert(j?.error ? JSON.stringify(j.error) : "Failed to generate itinerary");
+        let errorObj: Record<string, unknown> = {};
+        try {
+          errorObj = text ? JSON.parse(text) : {};
+        } catch {
+          errorObj = { error: text || "Failed" };
+        }
+        alert(errorObj?.error ? JSON.stringify(errorObj.error) : "Failed to generate itinerary");
         return;
       }
-      setResult(j);
-    } catch (e: any) {
+
+      try {
+        const json = JSON.parse(text);
+        const validated = ItinerarySchema.parse(json);
+        setResult(validated);
+      } catch (parseError) {
+        alert("Invalid response from server");
+      }
+    } catch (e) {
       setLoading(false);
-      alert(e?.message ?? "Network error");
+      const errorMessage = e instanceof Error ? e.message : "Network error";
+      alert(errorMessage);
     }
   };
   return (
