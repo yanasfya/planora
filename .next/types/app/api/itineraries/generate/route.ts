@@ -1,4 +1,4 @@
-// File: C:\Users\ilyan\OneDrive\Documents\BCS YEAR 3\SEM 9\CP2\nextplanora\app\api\itineraries\generate\route.ts
+// File: C:\Users\ilyan\OneDrive\Documents\BCS YEAR 3\SEM 9\CP2\planora\app\api\itineraries\generate\route.ts
 import * as entry from '../../../../../../app/api/itineraries/generate/route.js'
 import type { NextRequest } from 'next/server.js'
 

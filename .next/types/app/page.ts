@@ -1,4 +1,4 @@
-// File: C:\Users\ilyan\OneDrive\Documents\BCS YEAR 3\SEM 9\CP2\nextplanora\app\page.tsx
+// File: C:\Users\ilyan\OneDrive\Documents\BCS YEAR 3\SEM 9\CP2\planora\app\page.tsx
 import * as entry from '../../../app/page.js'
 import type { ResolvingMetadata, ResolvingViewport } from 'next/dist/lib/metadata/types/metadata-interface.js'
 
