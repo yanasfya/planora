@@ -17,7 +17,13 @@ export async function POST(req: Request) {
 
     try {
       const itinerary = await generateItinerary(prefs);
-      return NextResponse.json(itinerary);
+
+      const savedItinerary = await ItineraryModel.create(itinerary);
+
+      return NextResponse.json({
+        ...itinerary,
+        _id: savedItinerary._id.toString(),
+      });
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : String(err);
       console.error("LLM validation error:", errorMessage);
