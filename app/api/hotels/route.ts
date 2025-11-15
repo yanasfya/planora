@@ -350,6 +350,7 @@ function generateSmartHotels(
       id: `${city}-${budget}-${i}`,
       name: generateRealisticHotelName(city, area, budget, i),
       price,
+      priceUSD: price, // Store original USD price for currency conversion
       currency: pricing.currency,
       rating,
       image: getUnsplashImage(i),
