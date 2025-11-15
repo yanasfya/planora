@@ -3,8 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { ItinerarySchema, type Itinerary } from "@lib/types";
-import { ArrowLeft, Loader2 } from "lucide-react";
-import { BentoGrid, BentoCard } from "../../components/BentoGrid";
+import { ArrowLeft, Loader2, Share2, Download } from "lucide-react";
 import DayCard from "../../components/widgets/DayCard";
 import WeatherWidget from "../../components/widgets/WeatherWidget";
 import MapWidget from "../../components/widgets/MapWidget";
@@ -81,76 +80,98 @@ export default function ItineraryPage({ params }: { params: { id: string } }) {
 
   return (
     <main className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-orange-50">
-      <div className="mx-auto max-w-7xl px-4 py-10 sm:px-6 lg:px-8">
-        <div className="mb-6 flex flex-wrap items-center justify-between gap-4">
-          <button
-            onClick={() => router.push("/")}
-            className="inline-flex items-center gap-2 rounded-xl bg-white px-4 py-2 font-medium text-gray-700 shadow-md transition-all hover:bg-gray-50 hover:shadow-lg"
-          >
-            <ArrowLeft className="h-4 w-4" />
-            Back to Home
-          </button>
-          <CurrencySelector variant="inline" showLabel={true} />
-        </div>
+      <div className="sticky top-0 z-10 border-b border-gray-200 bg-white/80 backdrop-blur-sm">
+        <div className="mx-auto max-w-7xl px-4 py-4 sm:px-6 lg:px-8">
+          <div className="flex items-center justify-between gap-4">
+            <div className="flex items-center gap-4">
+              <button
+                onClick={() => router.push("/")}
+                className="inline-flex items-center gap-2 rounded-lg px-3 py-2 font-medium text-gray-700 transition-colors hover:bg-gray-100"
+              >
+                <ArrowLeft className="h-5 w-5" />
+                <span className="hidden sm:inline">Back</span>
+              </button>
+              <div className="hidden md:block">
+                <h1 className="text-lg font-bold text-gray-900">
+                  {itinerary.prefs.destination}
+                </h1>
+                <p className="text-sm text-gray-600">
+                  {itinerary.prefs.startDate} - {itinerary.prefs.endDate}
+                </p>
+              </div>
+            </div>
 
-        <div className="mb-8 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <h1 className="text-3xl font-bold text-gray-900 sm:text-4xl">
-              Your Personalized Itinerary
-            </h1>
-            <p className="mt-2 text-gray-600">
-              <span className="font-semibold">{itinerary.prefs.destination}</span> •{" "}
-              {itinerary.prefs.startDate} to {itinerary.prefs.endDate}
-            </p>
-            <div className="mt-2 flex flex-wrap gap-2">
-              <span className="rounded-full bg-blue-100 px-3 py-1 text-xs font-medium text-blue-700">
-                {itinerary.prefs.budget}
-              </span>
-              {itinerary.prefs.interests.map((interest) => (
-                <span
-                  key={interest}
-                  className="rounded-full bg-gray-100 px-3 py-1 text-xs font-medium text-gray-700"
-                >
-                  {interest}
-                </span>
-              ))}
+            <div className="flex items-center gap-3">
+              <CurrencySelector variant="inline" showLabel={false} />
+              <button className="hidden items-center gap-2 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50 sm:inline-flex">
+                <Share2 className="h-4 w-4" />
+                Share
+              </button>
+              <button className="hidden items-center gap-2 rounded-lg bg-blue-600 px-3 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-700 sm:inline-flex">
+                <Download className="h-4 w-4" />
+                Export PDF
+              </button>
             </div>
           </div>
-          <button
-            onClick={() => router.push("/")}
-            className="rounded-xl bg-white px-6 py-3 font-semibold text-gray-700 shadow-md transition-all hover:bg-gray-50 hover:shadow-lg"
-          >
-            Plan New Trip
-          </button>
+        </div>
+      </div>
+
+      <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
+        <div className="mb-6 md:hidden">
+          <h1 className="text-2xl font-bold text-gray-900">
+            {itinerary.prefs.destination}
+          </h1>
+          <p className="mt-1 text-gray-600">
+            {itinerary.prefs.startDate} - {itinerary.prefs.endDate}
+          </p>
+          <div className="mt-3 flex flex-wrap gap-2">
+            <span className="rounded-full bg-blue-100 px-3 py-1 text-xs font-medium text-blue-700">
+              {itinerary.prefs.budget}
+            </span>
+            {itinerary.prefs.interests.map((interest) => (
+              <span
+                key={interest}
+                className="rounded-full bg-gray-100 px-3 py-1 text-xs font-medium text-gray-700"
+              >
+                {interest}
+              </span>
+            ))}
+          </div>
         </div>
 
-        <BentoGrid>
-          <BentoCard className="col-span-2 lg:col-span-2 lg:row-span-2">
-            <MapWidget
-              destination={itinerary.prefs.destination}
-              activityCount={totalActivities}
-            />
-          </BentoCard>
+        <div className="grid grid-cols-1 gap-6 lg:grid-cols-12">
+          <div className="space-y-6 lg:col-span-8">
+            <div className="rounded-xl bg-white p-6 shadow-md">
+              <WeatherWidget destination={itinerary.prefs.destination} />
+            </div>
 
-          <BentoCard className="col-span-2 lg:col-span-4">
-            <WeatherWidget destination={itinerary.prefs.destination} />
-          </BentoCard>
+            {itinerary.days.map((day) => (
+              <div key={day.day} className="rounded-xl bg-white shadow-md">
+                <DayCard day={day} />
+              </div>
+            ))}
+          </div>
 
-          {itinerary.days.map((day) => (
-            <BentoCard key={day.day} className="col-span-2 lg:col-span-2">
-              <DayCard day={day} />
-            </BentoCard>
-          ))}
+          <div className="space-y-6 lg:col-span-4">
+            <div className="lg:sticky lg:top-24 lg:space-y-6">
+              <div className="rounded-xl bg-white p-4 shadow-md">
+                <MapWidget
+                  destination={itinerary.prefs.destination}
+                  activityCount={totalActivities}
+                />
+              </div>
 
-          <BentoCard className="col-span-2 lg:col-span-2">
-            <HotelWidget
-              destination={itinerary.prefs.destination}
-              budget={itinerary.prefs.budget}
-              checkInDate={itinerary.prefs.startDate}
-              checkOutDate={itinerary.prefs.endDate}
-            />
-          </BentoCard>
-        </BentoGrid>
+              <div className="rounded-xl bg-white shadow-md">
+                <HotelWidget
+                  destination={itinerary.prefs.destination}
+                  budget={itinerary.prefs.budget}
+                  checkInDate={itinerary.prefs.startDate}
+                  checkOutDate={itinerary.prefs.endDate}
+                />
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
     </main>
   );

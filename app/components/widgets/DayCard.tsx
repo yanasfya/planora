@@ -11,10 +11,10 @@ interface DayCardProps {
 }
 
 export default function DayCard({ day, className = "" }: DayCardProps) {
-  const [isExpanded, setIsExpanded] = useState(false);
+  const [isExpanded, setIsExpanded] = useState(true);
 
   return (
-    <div className={`space-y-4 ${className}`}>
+    <div className={`space-y-4 p-6 ${className}`}>
       <button
         onClick={() => setIsExpanded(!isExpanded)}
         className="flex w-full items-center justify-between rounded-xl bg-gradient-to-br from-blue-50 to-blue-100 p-4 text-left transition-all hover:from-blue-100 hover:to-blue-200"
